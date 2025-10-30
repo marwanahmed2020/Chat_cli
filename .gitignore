@@ -1,0 +1,22 @@
+# Build artifacts
+build/
+*.o
+*.out
+*.exe
+
+# Database files
+*.db
+*.db-journal
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Log files
+*.log
