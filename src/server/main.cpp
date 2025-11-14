@@ -4,62 +4,113 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <string.h>
+#include <thread>
+#include <cstdlib>
+#include <ctime>
+
 using namespace std;
+
+
+
+
+// i want to create send and recv functions to make it easier with the resusablilty
+void send_message(int socket,string message)
+{
+    send(socket, message.c_str(), message.length(), 0);
+}
+
+
+void recv_message(int socket)
+{
+    char buffer[1024];
+    // Initially: [ ][ ][ ][ ][ ][ ]
+
+
+    int bytes_received = recv(socket, buffer, sizeof(buffer)-1, 0);
+    // After receiving "Hello" (5 bytes):
+    // buffer: ['H']['e']['l']['l']['o'][ ]
+    // bytes_received = 5    
+            
+    if (bytes_received > 0)
+    {
+        buffer[bytes_received] = '\0'; //buffer: ['H']['e']['l']['l']['o']['\0']
+        cout << "Client said: " << buffer;
+            
+        // 🆕 my turn to response!
+        cout << "💬 Type your response: ";
+    }
+            
+
+}
+
+int randomBetween(int min, int max) {
+    if (min==max)
+    { 
+        return max;
+    }
+    return rand() % (max - min + 1) + min;
+}
+
 
 int main()
 {
-    cout << "Continuous Chat Server" << endl;
-    cout << "Server will run forever until i press Ctrl+C or say bye" << endl;
 
-    // im now creating the server socket
+    srand(time(0));
+    
+    cout << "=== Continuous Chat Server ===" << endl;
+    cout << "Server will run forever until you press Ctrl+C" << endl;
+    // Setup server (ONE TIME)
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in server_address;
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(12345);  
+    server_address.sin_port = htons(12345);  // ← CHANGED TO 12345
     server_address.sin_addr.s_addr = INADDR_ANY;
 
-    // this if condition for checking if the port 12345 bind or its busy 
-    // becuase when i tried the first time to connect locally the client could not connect 
-    // that is becuase the port was busy and i did not now where is the problem from
-    // so i searched about the bind function and then discoverd that it should return -1 if it cant bind 
+    // Try to bind - if fails, try another port 
+    // i will use the function randomBetween to get random ports if one if them is busy i will try until i find one that is not busy
+    htons(12345);  
     if (bind(server_socket, (struct sockaddr*)&server_address, sizeof(server_address)) < 0) {
-        cout << "Port 12345 busy! Trying 23456..." << endl;
-        server_address.sin_port = htons(23456);  // Trying alternative port
+        cout << "❌ Port 12345 busy! Trying 23456..." << endl;
+        server_address.sin_port = htons(23456);  // Try alternative port
         if (bind(server_socket, (struct sockaddr*)&server_address, sizeof(server_address)) < 0) {
-            cout << "Bind failed! Try yet another port." << endl;
+            cout << "❌ Bind failed! Try yet another port." << endl;
             close(server_socket);
             return 1;
         }
     }
-
-    
     listen(server_socket, 5);
 
-    cout << "Server ready!" << endl;
+    cout << "✅ Server ready! Friends can connect anytime." << endl;
     cout << "Local: telnet 127.0.0.1 12345" << endl;
     cout << "ZeroTier: telnet 10.242.150.235 12345" << endl;
 
     
-    cout << "\n Waiting for new client..." << endl;
+    cout << "\n🔄 Waiting for new client..." << endl;
         
     while(true){
 
-    
-    // waiting for any client to connect (locally or ZeroTier)
+    // Wait for ANY client to connect (local or ZeroTier)
     struct sockaddr_in client_info;
     socklen_t client_len = sizeof(client_info);
     int client_socket = accept(server_socket, (struct sockaddr*)&client_info, &client_len);
-    cout << "New client connected from: " << inet_ntoa(client_info.sin_addr) << endl;
+        
+    cout << "🎉 New client connected from: " << inet_ntoa(client_info.sin_addr) << endl;
+
+   
+
+    // 🆕 MAIN LOOP - Keep server running forever
 
     while (true) {
        
         // this massage will apear on his terminal
-        const char* welcome = "Hello! Type a message:\n";
-        send(client_socket, welcome, strlen(welcome), 0);
+        // const char* welcome = "Hello! Type a message:\n";
+        // send(client_socket, welcome, strlen(welcome), 0);
+
+        send_message(client_socket,"Hello! Type a message:\n");
 
         // Chat with this client
-        
-
+        thread recv_mssg(recv_message);
+/*
         char buffer[100];
         int bytes_received = recv(client_socket, buffer, 99, 0);
         
@@ -68,13 +119,14 @@ int main()
             buffer[bytes_received] = '\0';
             cout << "Client said: " << buffer;
             
-         // this massage will appear on my terminal when its my turn to send a massage
-        cout << "Type your response: ";
-    
+         // 🆕 YOUR TURN TO RESPONSE!
+        cout << "💬 Type your response: ";
+*/    
         string reply;
-        getline(cin, reply);  // i Used getline() instead of cin>> to fix incompaitable data types passing
+        getline(cin, reply);  // ← FIX: Use getline() instead of cin>>
         if(reply == "bye")
         {
+            reply =reply+"\n";
             send(client_socket, reply.c_str(), reply.length(), 0);
             close(client_socket);
             cout << "Client disconnected." << endl;
@@ -82,19 +134,45 @@ int main()
         }
         else
         {
+            reply =reply+"\n";
             send(client_socket, reply.c_str(), reply.length(), 0);
         }
-        // Send my response
+        // Send your response
         cout << "Sent your response: " << reply << endl;
         }
+
+
+
+        
+
         // Close THIS client connection but keep server running
-        // SERVER DOES NOT EXIT - goes back to accept() for next client
-        // i made the first while loop to keep the server running for other users
+       
+        
+        // 🆕 SERVER DOES NOT EXIT - goes back to accept() for next client
     }
+    
+    close(server_socket);
+    return 0;
 
 }
 
     // This line never reached because of infinite loop
-    close(server_socket);
-    return 0;
+    
 }
+
+
+/*
+
+i want to open thread for reciving and sending also multiple
+messages at the same time
+
+1- i will enhance the operations of sending and reciving 
+2- make the function more readable and reusable easily
+to use in threads like send and recv.
+3- adding threading for sending and reciving
+
+
+
+
+
+*/
