@@ -10,9 +10,6 @@
 
 using namespace std;
 
-
-
-
 // i want to create send and recv functions to make it easier with the resusablilty
 void send_message(int socket,string message)
 {
@@ -109,7 +106,7 @@ int main()
         send_message(client_socket,"Hello! Type a message:\n");
 
         // Chat with this client
-        thread recv_mssg(recv_message);
+        //thread recv_mssg(recv_message);
 /*
         char buffer[100];
         int bytes_received = recv(client_socket, buffer, 99, 0);
@@ -150,27 +147,10 @@ int main()
         
         // 🆕 SERVER DOES NOT EXIT - goes back to accept() for next client
     }
-
-    close(server_socket);
+    
+     close(server_socket);
     return 0;
-
 }
+   
+    
 
-    // This line never reached because of infinite loop
-
-
-/*
-
-i want to open thread for reciving and sending also multiple
-messages at the same time
-
-1- i will enhance the operations of sending and reciving 
-2- make the function more readable and reusable easily
-to use in threads like send and recv.
-3- adding threading for sending and reciving
-
-
-
-
-
-*/
