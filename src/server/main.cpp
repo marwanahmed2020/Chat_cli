@@ -150,15 +150,13 @@ int main()
         
         // 🆕 SERVER DOES NOT EXIT - goes back to accept() for next client
     }
-    
+
     close(server_socket);
     return 0;
 
 }
 
     // This line never reached because of infinite loop
-    
-}
 
 
 /*
