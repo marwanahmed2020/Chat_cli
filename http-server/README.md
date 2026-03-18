@@ -1,11 +1,13 @@
-# Multi-threaded HTTP Server (C++)
+# Multi-threaded Auth + Room Server (C++)
 
-Simple HTTP server built with C++ and POSIX sockets on Linux.
+Terminal-based concurrent TCP server built with C++ and POSIX sockets on Linux.
 
 ## Structure
 
 ```
 http-server/
+├── database.cpp
+├── database.h
 ├── main.cpp
 ├── server.cpp
 ├── server.h
@@ -18,15 +20,22 @@ http-server/
 
 ## Responsibilities
 
-- `main.cpp`: starts the server
-- `server.cpp`: socket lifecycle (`socket` / `bind` / `listen` / `accept`) and threading
-- `http.cpp`: request parsing and response generation
-- `utils.cpp`: helper utilities (logging, file loading)
+- `main.cpp`: starts the server over a port range
+- `server.cpp`: multi-port listener loops, threading, and terminal menus
+- `database.cpp`: SQLite schema + register/login + room create/join
+- `http.cpp`, `utils.cpp`: existing helpers from previous stage
+
+## Security choices
+
+- Parameterized SQLite statements to reduce SQL injection risk
+- Passwords are **hashed**, not plaintext, using PBKDF2-HMAC-SHA256
+- Per-user cryptographic random salt (`RAND_bytes`)
+- Constant-time hash comparison (`CRYPTO_memcmp`)
 
 ## Build
 
 ```bash
-g++ -std=c++17 -pthread main.cpp server.cpp http.cpp utils.cpp -o http_server
+g++ -std=c++17 -pthread main.cpp server.cpp database.cpp http.cpp utils.cpp -lsqlite3 -lcrypto -o http_server
 ```
 
 ## Run
@@ -35,15 +44,18 @@ g++ -std=c++17 -pthread main.cpp server.cpp http.cpp utils.cpp -o http_server
 ./http_server
 ```
 
-Server listens on port `8080`.
+At startup, provide a start/end port (for example `8080` to `8083`).
+The server creates a listener loop on every port in that range.
 
-## Quick test
+## Terminal test
 
 ```bash
-curl -i http://127.0.0.1:8080/
-curl -i http://127.0.0.1:8080/unknown
+telnet 127.0.0.1 8080
+# or
+nc 127.0.0.1 8080
 ```
 
-Expected:
-- `/` → `200 OK` with body `Hello from C++ HTTP Server!`
-- any other path → `404 Not Found`
+Flow:
+- Register with username/password
+- Login
+- Create room (receives generated 6-digit code) OR join an existing room code

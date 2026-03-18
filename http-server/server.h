@@ -1,13 +1,18 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#include <vector>
+
 class Server {
 public:
-    explicit Server(int port);
-    void start() const;
+    Server(int start_port, int end_port);
+    void start();
 
 private:
-    int port_;
+    int start_port_;
+    int end_port_;
+
+    void run_listener(int port) const;
 };
 
 void handle_client(int client_socket);
