@@ -40,41 +40,112 @@ Chat_cli/
 `Server::start()` spawns one `std::thread` per port in the given range. Each thread runs its own `socket → bind → listen → accept` loop independently.
 
 ```
-main thread
-  └─ Server::start()
-       ├─ thread → run_listener(8080)   accept() loop forever
-       ├─ thread → run_listener(8081)   accept() loop forever
-       └─ thread → run_listener(8082)   accept() loop forever
+┌─────────────────────────────────────────────────────────────────┐
+│                         main thread                             │
+│                       Server::start()                           │
+└──────────┬──────────────────┬──────────────────┬───────────────┘
+           │                  │                  │
+           ▼                  ▼                  ▼
+  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+  │ run_listener()  │ │ run_listener()  │ │ run_listener()  │
+  │   port 8080     │ │   port 8081     │ │   port 8082     │
+  │                 │ │                 │ │                 │
+  │  socket()       │ │  socket()       │ │  socket()       │
+  │  bind()         │ │  bind()         │ │  bind()         │
+  │  listen()       │ │  listen()       │ │  listen()       │
+  │  accept() ────► │ │  accept() ────► │ │  accept() ────► │
+  │  (blocks)       │ │  (blocks)       │ │  (blocks)       │
+  └─────────────────┘ └─────────────────┘ └─────────────────┘
 ```
 
 ### 2 — Per-client threads
 
 Every `accept()` call spawns a **detached** `std::thread(handle_client, socket_fd)`. That thread owns the socket for the client's entire session and cleans up when the client disconnects.
 
+```
+  accept() on port 8080
+        │
+        ├──► client A connects ──► detached thread ──► handle_client(fd_A)
+        │
+        ├──► client B connects ──► detached thread ──► handle_client(fd_B)
+        │
+        └──► client C connects ──► detached thread ──► handle_client(fd_C)
+                                                              │
+                                                    (each thread lives
+                                                     until disconnect,
+                                                     then self-destructs)
+```
+
 ### 3 — Client session flow
 
 ```
-Connect
-  └─ Auth Menu
-       ├─ 1) Register  → username + password (min 8 chars) → stored hashed
-       ├─ 2) Login     → verified → Room Menu
-       └─ 3) Quit
-
-     Room Menu
-       ├─ 1) Create room → server generates 6-digit code → enter chat
-       ├─ 2) Join room   → enter code → enter chat
-       └─ 3) Quit
-
-          Live Chat
-            ├─ type message → broadcast to everyone else in the room
-            ├─ others see   [482931] alice: hello
-            ├─ you see      [you] hello
-            └─ /leave       → back to Room Menu
+  Client connects (nc / telnet)
+           │
+           ▼
+  ┌─────────────────────────────────┐
+  │           AUTH MENU             │
+  ├─────────────────────────────────┤
+  │  1) Register                    │
+  │  2) Login                       │◄─── loops until login succeeds
+  │  3) Quit ──────────────────────►│ disconnect
+  └──────────────┬──────────────────┘
+                 │ login OK
+                 ▼
+  ┌─────────────────────────────────┐
+  │           ROOM MENU             │
+  ├─────────────────────────────────┤
+  │  1) Create room                 │──► generates 6-digit code
+  │  2) Join room ──► enter code    │
+  │  3) Quit ──────────────────────►│ disconnect
+  └──────────────┬──────────────────┘
+                 │ entered a room
+                 ▼
+  ┌─────────────────────────────────────────────────────┐
+  │                   LIVE CHAT                         │
+  ├─────────────────────────────────────────────────────┤
+  │                                                     │
+  │  you type: "hello"                                  │
+  │       │                                             │
+  │       ├──► you see:    [you] hello                  │
+  │       └──► others see: [482931] alice: hello        │
+  │                                                     │
+  │  others type ──► you see: [482931] bob: hey         │
+  │                                                     │
+  │  /leave ────────────────────────────────────────────┼──► back to Room Menu
+  │  disconnect ────────────────────────────────────────┼──► cleanup + notify room
+  └─────────────────────────────────────────────────────┘
 ```
 
 ### 4 — Room broadcast
 
 An in-memory `unordered_map<string, vector<RoomClient>>` tracks which sockets are currently in each room. A `std::mutex` protects this map. When a message arrives, the lock is taken just long enough to snapshot the target socket list, then released before any `send()` calls — so one slow client never blocks others.
+
+```
+  room_clients map (protected by std::mutex)
+  ┌──────────────────────────────────────────────┐
+  │  "482931" ──► [ {fd_A, "alice"},              │
+  │                 {fd_B, "bob"  },              │
+  │                 {fd_C, "carol"} ]             │
+  │  "771840" ──► [ {fd_D, "dave" } ]             │
+  └──────────────────────────────────────────────┘
+
+  alice sends "hello"
+        │
+        ▼
+  lock mutex ──► copy [fd_B, fd_C] ──► unlock mutex
+        │
+        ├──► send(fd_B, "[482931] alice: hello")
+        └──► send(fd_C, "[482931] alice: hello")
+             (fd_A skipped — that's alice herself)
+
+  alice disconnects abruptly
+        │
+        ▼
+  receive_line() returns false
+        │
+        ├──► remove fd_A from room map
+        └──► broadcast "[system] alice left room 482931" to fd_B, fd_C
+```
 
 If a client drops (broken pipe / Ctrl+C), `receive_line()` returns `false`, the chat loop exits, the socket is removed from the map, and a leave notification is broadcast to the remaining clients.
 
@@ -84,10 +155,25 @@ If a client drops (broken pipe / Ctrl+C), `receive_line()` returns `false`, the 
 
 `chat.db` is created automatically on first run. Three tables:
 
-```sql
-users         (id, username, password_hash, salt, created_at)
-rooms         (room_code PK, owner_user_id FK, created_at)
-room_members  (room_code FK, user_id FK, joined_at)  ← composite PK
+```
+  ┌──────────────────────────┐        ┌───────────────────────────┐
+  │          users           │        │          rooms            │
+  ├──────────────────────────┤        ├───────────────────────────┤
+  │ id           INTEGER PK  │◄───┐   │ room_code   TEXT PK       │
+  │ username     TEXT UNIQUE │    │   │ owner_user_id INTEGER FK ─┼──► users.id
+  │ password_hash TEXT       │    │   │ created_at  DATETIME      │
+  │ salt         TEXT        │    │   └─────────────┬─────────────┘
+  │ created_at   DATETIME    │    │                 │
+  └──────────────────────────┘    │                 │
+                                   │   ┌─────────────▼─────────────┐
+                                   │   │       room_members         │
+                                   │   ├───────────────────────────┤
+                                   │   │ room_code  TEXT FK         │
+                                   └───┼─user_id    INTEGER FK      │
+                                       │ joined_at  DATETIME        │
+                                       │ PRIMARY KEY(room_code,     │
+                                       │             user_id)       │
+                                       └───────────────────────────┘
 ```
 
 `PRAGMA foreign_keys = ON` is set per connection. All queries that touch user input use `sqlite3_prepare_v2` + `sqlite3_bind_*` — never string concatenation.
@@ -95,6 +181,36 @@ room_members  (room_code FK, user_id FK, joined_at)  ← composite PK
 ---
 
 ## Security
+
+```
+  Registration flow
+  ─────────────────
+  password (plaintext)
+       │
+       ▼
+  RAND_bytes(16) ──► salt (hex)
+       │
+       ▼
+  PKCS5_PBKDF2_HMAC(password, salt, 120000 iters, SHA-256)
+       │
+       ▼
+  password_hash (hex) ──► stored in SQLite   (plaintext never saved)
+
+  Login flow
+  ──────────
+  username ──► SELECT password_hash, salt FROM users
+                              │
+  submitted password ─────────┼──► re-run PBKDF2 with stored salt
+                              │
+                              ▼
+                    CRYPTO_memcmp(stored_hash, computed_hash)
+                              │
+                    ┌─────────┴──────────┐
+                   match               no match
+                    │                    │
+                 Login OK          "Invalid username or password"
+                                   (same message — no username enumeration)
+```
 
 | Concern | Implementation |
 |---------|---------------|
