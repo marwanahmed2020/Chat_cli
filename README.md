@@ -166,7 +166,7 @@ Bob types `/leave` → Alice sees `[system] bob left room 482931`.
 
 ---
 
-## CV Description
+
 
 > **Multi-threaded Authenticated TCP Chat Server (C++)**
 >
