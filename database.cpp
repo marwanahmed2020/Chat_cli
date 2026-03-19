@@ -225,7 +225,7 @@ bool Database::verify_user(const std::string& username, const std::string& passw
         return false;
     }
 
-    user_id = sqlite3_column_int(statement, 0);
+    int fetched_id = sqlite3_column_int(statement, 0);
     const unsigned char* stored_hash = sqlite3_column_text(statement, 1);
     const unsigned char* stored_salt = sqlite3_column_text(statement, 2);
 
@@ -252,6 +252,7 @@ bool Database::verify_user(const std::string& username, const std::string& passw
         return false;
     }
 
+    user_id = fetched_id;   // only assigned after hash is confirmed correct
     return true;
 }
 
