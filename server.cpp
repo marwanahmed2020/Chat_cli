@@ -16,6 +16,10 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 
 namespace {
 struct RoomClient {
@@ -25,6 +29,16 @@ struct RoomClient {
 
 std::unordered_map<std::string, std::vector<RoomClient>> room_clients;
 std::mutex room_clients_mutex;
+std::mutex log_mutex;
+
+void server_log(const std::string& event) {
+    auto now = std::chrono::system_clock::now();
+    std::time_t t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_buf;
+    localtime_r(&t, &tm_buf);
+    std::lock_guard<std::mutex> lock(log_mutex);
+    std::cout << "[" << std::put_time(&tm_buf, "%H:%M:%S") << "] " << event << "\n";
+}
 
 Database& get_database() {
     static Database database("chat.db");
@@ -132,6 +146,7 @@ void broadcast_to_room(const std::string& room_code, const std::string& message,
 
 void run_room_chat_session(int client_socket, const std::string& username, const std::string& room_code) {
     add_room_client(room_code, client_socket, username);
+    server_log("ROOM " + username + " entered room " + room_code);
 
     send_text(client_socket,
               "\nEntered room " + room_code + ".\n"
@@ -142,11 +157,13 @@ void run_room_chat_session(int client_socket, const std::string& username, const
     while (true) {
         std::string line;
         if (!receive_line(client_socket, line)) {
+            server_log("DISCONN " + username + " disconnected from room " + room_code);
             break;
         }
 
         if (line == "/leave") {
             send_text(client_socket, "Leaving room " + room_code + "...\n\n");
+            server_log("LEAVE " + username + " left room " + room_code);
             break;
         }
 
@@ -155,6 +172,7 @@ void run_room_chat_session(int client_socket, const std::string& username, const
         }
 
         std::string formatted = "[" + room_code + "] " + username + ": " + line + "\n";
+        server_log("MSG  [" + room_code + "] " + username + ": " + line);
         broadcast_to_room(room_code, formatted, client_socket);
         send_text(client_socket, "[you] " + line + "\n");
     }
@@ -177,6 +195,50 @@ void Server::start() {
     for (auto& listener : listeners) {
         listener.join();
     }
+}
+
+void Server::start_placeholder_remove() {
+}
+
+void Server::run_admin_console() const {
+    Database& database = get_database();
+    std::string cmd;
+    while (std::getline(std::cin, cmd)) {
+        // trim trailing whitespace
+        while (!cmd.empty() && (cmd.back() == '\r' || cmd.back() == ' ')) cmd.pop_back();
+
+        if (cmd == "help") {
+            std::cout << "\nAdmin commands:\n"
+                      << "  rooms        - live room list with occupants\n"
+                      << "  db users     - all registered users\n"
+                      << "  db rooms     - all created rooms\n"
+                      << "  db members   - all room memberships\n"
+                      << "  help         - show this help\n\n";
+        } else if (cmd == "rooms") {
+            std::lock_guard<std::mutex> lock(room_clients_mutex);
+            if (room_clients.empty()) {
+                std::cout << "(no active rooms)\n";
+            } else {
+                std::cout << "\n--- Active Rooms ---\n";
+                for (const auto& [code, clients] : room_clients) {
+                    std::cout << "Room " << code << " (" << clients.size() << " member(s)):";
+                    for (const auto& c : clients) std::cout << " " << c.username;
+                    std::cout << "\n";
+                }
+                std::cout << "--------------------\n";
+            }
+        } else if (cmd == "db users") {
+            database.admin_print_users(std::cout);
+        } else if (cmd == "db rooms") {
+            database.admin_print_rooms(std::cout);
+        } else if (cmd == "db members") {
+            database.admin_print_members(std::cout);
+        } else if (!cmd.empty()) {
+            std::cout << "Unknown command '" << cmd << "'. Type 'help'.\n";
+        }
+    }
+    // stdin closed — sleep forever keeping listener threads alive
+    for (;;) std::this_thread::sleep_for(std::chrono::hours(24));
 }
 
 void Server::run_listener(int port) const {
@@ -234,6 +296,7 @@ void handle_client(int client_socket) {
         close(client_socket);
         return;
     }
+    server_log("CONNECT fd=" + std::to_string(client_socket));
 
     Database& database = get_database();
     int user_id = -1;
@@ -267,8 +330,10 @@ void handle_client(int client_socket) {
 
             if (database.create_user(username, password, error)) {
                 send_text(client_socket, "Account created successfully. Please login.\n\n");
+                server_log("REGISTER OK  username=" + username);
             } else {
                 send_text(client_socket, "Register failed: " + error + "\n\n");
+                server_log("REGISTER FAIL username=" + username + " reason=" + error);
             }
         } else if (choice == "2") {
             std::string password;
@@ -282,8 +347,10 @@ void handle_client(int client_socket) {
 
             if (database.verify_user(username, password, user_id, error)) {
                 send_text(client_socket, "Login successful.\n\n");
+                server_log("LOGIN OK  username=" + username);
             } else {
                 send_text(client_socket, "Login failed: " + error + "\n\n");
+                server_log("LOGIN FAIL username=" + username + " reason=" + error);
             }
         } else if (choice == "3") {
             send_text(client_socket, "Goodbye.\n");

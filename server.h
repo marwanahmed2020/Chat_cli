@@ -13,6 +13,7 @@ private:
     int end_port_;
 
     void run_listener(int port) const;
+    void run_admin_console() const;
 };
 
 void handle_client(int client_socket);
