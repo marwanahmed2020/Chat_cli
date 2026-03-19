@@ -380,8 +380,10 @@ void handle_client(int client_socket) {
 
             if (room_code.empty()) {
                 send_text(client_socket, "Create room failed: " + error + "\n\n");
+                server_log("ROOM CREATE FAIL username=" + username + " reason=" + error);
             } else {
                 send_text(client_socket, "Room created. Share this room code: " + room_code + "\n");
+                server_log("ROOM CREATE OK  username=" + username + " code=" + room_code);
                 run_room_chat_session(client_socket, username, room_code);
             }
         } else if (choice == "2") {
@@ -395,12 +397,15 @@ void handle_client(int client_socket) {
 
             if (database.join_room(user_id, room_code, error)) {
                 send_text(client_socket, "Joined room " + room_code + " successfully.\n");
+                server_log("ROOM JOIN OK  username=" + username + " code=" + room_code);
                 run_room_chat_session(client_socket, username, room_code);
             } else {
                 send_text(client_socket, "Join failed: " + error + "\n\n");
+                server_log("ROOM JOIN FAIL username=" + username + " code=" + room_code + " reason=" + error);
             }
         } else if (choice == "3") {
             send_text(client_socket, "Session ended.\n");
+            server_log("SESSION END username=" + username);
             close(client_socket);
             return;
         } else {
