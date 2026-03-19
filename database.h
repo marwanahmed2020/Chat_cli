@@ -2,6 +2,7 @@
 #define DATABASE_H
 
 #include <mutex>
+#include <ostream>
 #include <string>
 
 struct sqlite3;
@@ -16,6 +17,9 @@ public:
     bool verify_user(const std::string& username, const std::string& password, int& user_id, std::string& error_message);
     std::string create_room(int owner_user_id, std::string& error_message);
     bool join_room(int user_id, const std::string& room_code, std::string& error_message);
+    void admin_print_users(std::ostream& out);
+    void admin_print_rooms(std::ostream& out);
+    void admin_print_members(std::ostream& out);
 
 private:
     sqlite3* db_;

@@ -187,17 +187,14 @@ Server::Server(int start_port, int end_port) : start_port_(start_port), end_port
 void Server::start() {
     get_database();
 
-    std::vector<std::thread> listeners;
+    // Listener threads run forever; detach them
     for (int port = start_port_; port <= end_port_; ++port) {
-        listeners.emplace_back(&Server::run_listener, this, port);
+        std::thread(&Server::run_listener, this, port).detach();
     }
 
-    for (auto& listener : listeners) {
-        listener.join();
-    }
-}
-
-void Server::start_placeholder_remove() {
+    // Admin console owns the main-thread join; keeps process alive
+    std::thread admin(&Server::run_admin_console, this);
+    admin.join();
 }
 
 void Server::run_admin_console() const {

@@ -6,6 +6,7 @@
 #include <sqlite3.h>
 
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -351,4 +352,73 @@ bool Database::join_room(int user_id, const std::string& room_code, std::string&
     }
 
     return true;
+}
+
+void Database::admin_print_users(std::ostream& out) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const char* sql = "SELECT id, username FROM users ORDER BY id;";
+    sqlite3_stmt* statement = nullptr;
+
+    if (sqlite3_prepare_v2(db_, sql, -1, &statement, nullptr) != SQLITE_OK) {
+        out << "DB error: " << sqlite3_errmsg(db_) << "\n";
+        return;
+    }
+
+    out << "\n--- users ---\n";
+    while (sqlite3_step(statement) == SQLITE_ROW) {
+        int id = sqlite3_column_int(statement, 0);
+        const unsigned char* username = sqlite3_column_text(statement, 1);
+        out << id << " | " << (username ? reinterpret_cast<const char*>(username) : "") << "\n";
+    }
+    out << "------------\n";
+    sqlite3_finalize(statement);
+}
+
+void Database::admin_print_rooms(std::ostream& out) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const char* sql = "SELECT room_code, owner_user_id FROM rooms ORDER BY room_code;";
+    sqlite3_stmt* statement = nullptr;
+
+    if (sqlite3_prepare_v2(db_, sql, -1, &statement, nullptr) != SQLITE_OK) {
+        out << "DB error: " << sqlite3_errmsg(db_) << "\n";
+        return;
+    }
+
+    out << "\n--- rooms ---\n";
+    while (sqlite3_step(statement) == SQLITE_ROW) {
+        const unsigned char* code = sqlite3_column_text(statement, 0);
+        int owner = sqlite3_column_int(statement, 1);
+        out << (code ? reinterpret_cast<const char*>(code) : "") << " | owner=" << owner << "\n";
+    }
+    out << "------------\n";
+    sqlite3_finalize(statement);
+}
+
+void Database::admin_print_members(std::ostream& out) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const char* sql =
+        "SELECT rm.room_code, rm.user_id, u.username "
+        "FROM room_members rm "
+        "LEFT JOIN users u ON u.id = rm.user_id "
+        "ORDER BY rm.room_code, rm.user_id;";
+    sqlite3_stmt* statement = nullptr;
+
+    if (sqlite3_prepare_v2(db_, sql, -1, &statement, nullptr) != SQLITE_OK) {
+        out << "DB error: " << sqlite3_errmsg(db_) << "\n";
+        return;
+    }
+
+    out << "\n--- room_members ---\n";
+    while (sqlite3_step(statement) == SQLITE_ROW) {
+        const unsigned char* code = sqlite3_column_text(statement, 0);
+        int user_id = sqlite3_column_int(statement, 1);
+        const unsigned char* username = sqlite3_column_text(statement, 2);
+        out << (code ? reinterpret_cast<const char*>(code) : "") << " | user=" << user_id << " ("
+            << (username ? reinterpret_cast<const char*>(username) : "") << ")\n";
+    }
+    out << "--------------------\n";
+    sqlite3_finalize(statement);
 }
