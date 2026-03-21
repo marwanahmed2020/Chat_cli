@@ -9,6 +9,8 @@ Concurrent terminal chat server in C++ with:
 - Live room chat with many clients per room
 - Server admin console + event logging
 
+> Note: Test docs update for PR workflow validation.
+
 Clients connect with `nc` or `telnet`, register/login, create or join a room, and chat in real time.
 
 ---
