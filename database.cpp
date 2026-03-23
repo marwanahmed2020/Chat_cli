@@ -1,3 +1,24 @@
+#include <cassert>
+void Database::get_stats(int& user_count, int& room_count) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    user_count = 0;
+    room_count = 0;
+    const char* user_sql = "SELECT COUNT(*) FROM users;";
+    const char* room_sql = "SELECT COUNT(*) FROM rooms;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, user_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            user_count = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+    }
+    if (sqlite3_prepare_v2(db_, room_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            room_count = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+    }
+}
 #include "database.h"
 
 #include <openssl/crypto.h>
