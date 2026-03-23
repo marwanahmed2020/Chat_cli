@@ -210,6 +210,7 @@ void Server::run_admin_console() const {
                       << "  db users     - all registered users\n"
                       << "  db rooms     - all created rooms\n"
                       << "  db members   - all room memberships\n"
+                      << "  db stats     - user/room counts\n"
                       << "  help         - show this help\n\n";
         } else if (cmd == "rooms") {
             std::lock_guard<std::mutex> lock(room_clients_mutex);
@@ -230,6 +231,12 @@ void Server::run_admin_console() const {
             database.admin_print_rooms(std::cout);
         } else if (cmd == "db members") {
             database.admin_print_members(std::cout);
+        } else if (cmd == "db stats") {
+            int user_count = 0, room_count = 0;
+            database.get_stats(user_count, room_count);
+            std::cout << "\n--- DB Stats ---\n";
+            std::cout << "Users: " << user_count << "\nRooms: " << room_count << "\n";
+            std::cout << "----------------\n";
         } else if (!cmd.empty()) {
             std::cout << "Unknown command '" << cmd << "'. Type 'help'.\n";
         }

@@ -21,6 +21,9 @@ public:
     void admin_print_rooms(std::ostream& out);
     void admin_print_members(std::ostream& out);
 
+    // New: get user/room stats
+    void get_stats(int& user_count, int& room_count);
+
 private:
     sqlite3* db_;
     std::mutex mutex_;
