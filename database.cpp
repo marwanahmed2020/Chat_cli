@@ -1,4 +1,5 @@
 #include <cassert>
+// TODO: Consider adding database connection pool for high concurrency in future.
 void Database::get_stats(int& user_count, int& room_count) {
     std::lock_guard<std::mutex> lock(mutex_);
     user_count = 0;
